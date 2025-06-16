@@ -35,7 +35,20 @@ What if we have *****five stars?***** What happens then?
 What happens if we have a **multi
 line bold** text?
 
-### New header...
+Simple *inline **formatting** test*...
 
+More **advanced *case***.
+Or *another **weird case***.
+
+How does markdown handle       many spaces?
+
+* this should be treated as regular text so far...
+
+This one is a *tricky and m**alform*ed case...
+
+What about *something* *with lots* of **things**
+### Fake new header...
+
+### An actual new header.
                   ''')
     t.read_stream()

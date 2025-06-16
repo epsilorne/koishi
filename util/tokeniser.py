@@ -3,6 +3,11 @@ from util.tokens import *
 class Tokeniser:
     input: str
     pos: int = 0
+    in_bold: bool = False
+    in_emph: bool = False
+
+    # A 'stack' to store the order of emphs/strongs
+    stack: list[str] = []
 
     def __init__(self, input: str):
         self.input = input
@@ -35,7 +40,7 @@ class Tokeniser:
         return (msg, i)
 
     def consume_n(self, n: int):
-        if self.pos + n >= len(self.input):
+        if self.pos + n >= len(self.input) or self.pos + n < 0:
             return "\0"
         char = self.input[self.pos + n]
         self.pos += n
@@ -47,7 +52,7 @@ class Tokeniser:
         return self.input[self.pos]
 
     def peek_n(self, n: int):
-        if self.pos + n >= len(self.input):
+        if self.pos + n >= len(self.input) or self.pos + n < 0:
             return "\0"
         return self.input[self.pos + n]
 
@@ -55,6 +60,8 @@ class Tokeniser:
         return self.peek() == "\0"
 
     def parse_richtext(self):
+        self.in_bold = False
+        self.in_emph = False
         txt: str = ""
 
         while (curr := self.peek()) != "\0":
@@ -64,31 +71,71 @@ class Tokeniser:
                 break
 
             if curr == "*":
-                # If whitespace exists after '*', treat as an unordered list
-                if self.peek_n(1).isspace():
-                    continue
+                # If whitespace exists before and after '*', treat as an unordered list
+                if self.peek_n(1).isspace() and self.peek_n(-1).isspace():
+                    # TODO: unordered list function
+                    self.consume()
+                    txt += self.consume_until("\n")[0].strip()
+                    break
 
-                # TODO: fix because right now, it does not handle inline rich text, e.g
-                # An **inline *rich text* test**!
-                (_, n) = self.consume_while("*")
-                (txt_new, _) = self.consume_until("*")
-                self.consume_n(n)
+                # If character after is '*', we do some form of strong highlighting
+                if self.peek_n(1) == "*":
+                    # TODO: use proper tokens
 
-                # TODO: use token objects
-                if n == 2:
-                    txt += f"<strong>{txt_new}</strong>"
-                elif n == 1:
-                    txt += f"<emph>{txt_new}</emph>"
+                    # If the character AFTER that is '*', i.e. '***', we do strong emph
+                    if self.peek_n(2) == "*":
+
+                        # For the terminating '***' we base it on the order of strong/emphs
+                        if self.in_bold and self.in_emph:
+                            self.in_bold = False
+                            self.in_emph = False
+                            txt += self.stack.pop()
+                            txt += self.stack.pop()
+
+                        # Otherwise, the default '***' is strong-emph
+                        else:
+                            self.in_bold = True
+                            self.in_emph = True
+
+                            # TODO: this behaviour could be something like an 'add token(s) to stack',
+                            # likewise for the rest of them
+                            txt += "<strong><em>"
+                            self.stack.append("</strong>")
+                            self.stack.append("</em>")
+
+                    # Otherwise, just do regular strong
+                    else:
+                        if self.in_bold:
+                            self.in_bold = False
+                            txt += self.stack.pop()
+                        else:
+                            self.in_bold = True
+                            txt += "<strong>"
+                            self.stack.append("</strong>")
+
+                # Otherwise, it is just emphasised (italic)
                 else:
-                    # For more than three asterixes, just default to emph-strong
-                    txt += f"<emph><strong>{txt_new}</strong></emph>"
+                    if self.in_emph:
+                        self.in_emph = False
+                        txt += self.stack.pop()
+                    else:
+                        self.in_emph = True
+                        txt += "<em>"
+                        self.stack.append("</em>")
+
+                self.consume_while("*")
+                continue
 
             # TODO: inline code, lists, etc.
 
             txt += self.peek()
             self.consume()
 
-        # TODO: create the token 
+        # We 'empty' the stack for this paragraph, e.g. for the event of malformed markdown
+        while self.stack:
+            txt += self.stack.pop()
+
+        # TODO: create the paragraph token instead
         print(f"<p>{txt}</p>\n")
 
     # The 'main' tokeniser function; reads the input stream and builds tokens
@@ -106,7 +153,7 @@ class Tokeniser:
                 (_, n) = self.consume_while("#")
                 (txt, _) = self.consume_until("\n")
 
-                # TODO: make token object
+                # TODO: make token object for header
                 print(f"<h{n}>{txt.strip()}</h{n}>\n")
                 continue
 
