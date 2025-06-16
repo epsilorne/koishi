@@ -50,5 +50,7 @@ What about *something* *with lots* of **things**
 ### Fake new header...
 
 ### An actual new header.
+
+And some `inline code`.
                   ''')
     t.read_stream()

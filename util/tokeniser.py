@@ -5,6 +5,7 @@ class Tokeniser:
     pos: int = 0
     in_bold: bool = False
     in_emph: bool = False
+    in_code: bool = False
 
     # A 'stack' to store the order of emphs/strongs
     stack: list[str] = []
@@ -126,7 +127,16 @@ class Tokeniser:
                 self.consume_while("*")
                 continue
 
-            # TODO: inline code, lists, etc.
+            # TODO: lists, links, etc.
+            if curr == "`":
+                if self.in_code:
+                    self.in_code = False
+                    txt += "</code>"
+                else:
+                    self.in_code = True
+                    txt += "<code>"
+                self.consume()
+                continue
 
             txt += self.peek()
             self.consume()
@@ -157,7 +167,7 @@ class Tokeniser:
                 print(f"<h{n}>{txt.strip()}</h{n}>\n")
                 continue
 
-            # TODO: block quotes, code blocks, hrule, etc
+            # TODO: block quotes, code blocks, hrule, images, etc
 
             # Otherwise, parse as a rich text paragraph
             self.parse_richtext()
