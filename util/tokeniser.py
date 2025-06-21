@@ -10,6 +10,9 @@ class Tokeniser:
     # A 'stack' to store the order of emphs/strongs
     stack: list[str] = []
 
+    # A buffer to temporarily store raw text
+    buffer: str = ""
+
     def __init__(self, input: str):
         self.input = input
 
@@ -60,10 +63,21 @@ class Tokeniser:
     def eof(self):
         return self.peek() == "\0"
 
-    def parse_paragraph(self):
+    # TODO: proper doco
+    # Helper function to add a raw text token to a parent paragraph token
+    def end_raw_text(self, paragraph_token: ParagraphToken):
+        if self.buffer == "":
+            return
+
+        raw_text = RawTextToken()
+        raw_text.text = self.buffer
+        paragraph_token.children.append(raw_text)
+        self.buffer = ""
+
+    def parse_paragraph(self) -> ParagraphToken:
         self.in_bold = False
         self.in_emph = False
-        token = ParagraphToken()
+        paragraph_token = ParagraphToken()
         
         # TODO: make paragraph token use child tokens
         txt: str = ""
@@ -72,6 +86,7 @@ class Tokeniser:
             # A new line followed by whitespace is a new paragraph
             if curr == "\n" and self.peek_n(1).isspace():
                 self.consume_while("\n\r\t ")
+                self.end_raw_text(paragraph_token)
                 break
 
             if curr == "*":
@@ -79,7 +94,8 @@ class Tokeniser:
                 if self.peek_n(1).isspace() and self.peek_n(-1).isspace():
                     # TODO: unordered list function
                     self.consume()
-                    txt += self.consume_until("\n")[0].strip()
+                    # TODO: this gets the text up until the end of line; can populate list token with it
+                    self.consume_until("\n")[0].strip()
                     break
 
                 # If character after is '*', we do some form of strong highlighting
@@ -128,10 +144,10 @@ class Tokeniser:
                         self.stack.append("</em>")
 
                 self.consume_while("*")
-                continue
+                self.end_raw_text(paragraph_token)
 
             # TODO: lists, links, etc.
-            if curr == "`":
+            elif curr == "`":
                 if self.in_code:
                     self.in_code = False
                     txt += "</code>"
@@ -139,47 +155,44 @@ class Tokeniser:
                     self.in_code = True
                     txt += "<code>"
                 self.consume()
-                continue
 
-            txt += self.peek()
-            self.consume()
+            # Otherwise, treat as raw text
+            else:
+                self.buffer += self.consume()
 
         # We 'empty' the stack for this paragraph, e.g. for the event of malformed markdown
-        while self.stack:
-            txt += self.stack.pop()
+        # while self.stack:
+        #     txt += self.stack.pop()
+        return paragraph_token
 
-        token.text = txt
-        return token
-
-    def parse_header(self):
-        token = HeaderToken()
+    def parse_header(self) -> HeaderToken:
+        header_token = HeaderToken()
 
         (_, n) = self.consume_while("#")
         (txt, _) = self.consume_until("\n")
 
-        token.size = n
-        token.text = txt.strip()
-        return token
+        header_token.size = n
+        header_token.text = txt.strip()
+        return header_token
 
     # The 'main' tokeniser function; reads the input stream and builds tokens
     def read_stream(self):
         while self.peek() != "\0":
             curr = self.peek()
-            token = Token()
+            curr_token: Token
 
             # Ignore leading whitespace
             if curr.isspace():
                 self.consume()
-                continue
 
             # HEADER
-            if curr == "#":
-                token = self.parse_header()
+            elif curr == "#":
+                curr_token = self.parse_header()
+                print(f"{curr_token.to_html()}\n")
 
             # TODO: block quotes, code blocks, hrule, images, etc
 
             # Otherwise, parse as a rich text paragraph
             else:
-                token = self.parse_paragraph()
-
-            print(f"{token.text}\n")
+                curr_token = self.parse_paragraph()
+                print(f"{curr_token.to_html()}\n")
