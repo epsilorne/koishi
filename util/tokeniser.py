@@ -20,21 +20,21 @@ class Tokeniser:
         self.pos += 1
         return char
 
-    def consume_until(self, char: str):
+    def consume_until(self, delims: str):
         c: str = self.peek()
         msg: str = ""
         i: int = 0
-        while(self.peek() not in char and c != "\0"):
+        while(self.peek() not in delims and c != "\0"):
             c = self.consume()
             msg += c
             i += 1
         return (msg, i)
 
-    def consume_while(self, char: str):
+    def consume_while(self, delims: str):
         c: str = self.peek()
         msg: str = ""
         i: int = 0
-        while(self.peek() in char and c != "\0"):
+        while(self.peek() in delims and c != "\0"):
             c = self.consume()
             msg += c
             i += 1
@@ -60,9 +60,12 @@ class Tokeniser:
     def eof(self):
         return self.peek() == "\0"
 
-    def parse_richtext(self):
+    def parse_paragraph(self):
         self.in_bold = False
         self.in_emph = False
+        token = ParagraphToken()
+        
+        # TODO: make paragraph token use child tokens
         txt: str = ""
 
         while (curr := self.peek()) != "\0":
@@ -145,13 +148,24 @@ class Tokeniser:
         while self.stack:
             txt += self.stack.pop()
 
-        # TODO: create the paragraph token instead
-        print(f"<p>{txt}</p>\n")
+        token.text = txt
+        return token
+
+    def parse_header(self):
+        token = HeaderToken()
+
+        (_, n) = self.consume_while("#")
+        (txt, _) = self.consume_until("\n")
+
+        token.size = n
+        token.text = txt.strip()
+        return token
 
     # The 'main' tokeniser function; reads the input stream and builds tokens
     def read_stream(self):
         while self.peek() != "\0":
             curr = self.peek()
+            token = Token()
 
             # Ignore leading whitespace
             if curr.isspace():
@@ -160,14 +174,12 @@ class Tokeniser:
 
             # HEADER
             if curr == "#":
-                (_, n) = self.consume_while("#")
-                (txt, _) = self.consume_until("\n")
-
-                # TODO: make token object for header
-                print(f"<h{n}>{txt.strip()}</h{n}>\n")
-                continue
+                token = self.parse_header()
 
             # TODO: block quotes, code blocks, hrule, images, etc
 
             # Otherwise, parse as a rich text paragraph
-            self.parse_richtext()
+            else:
+                token = self.parse_paragraph()
+
+            print(f"{token.text}\n")
