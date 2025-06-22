@@ -3,12 +3,10 @@ from util.tokens import *
 class Tokeniser:
     input: str
     pos: int = 0
-    in_bold: bool = False
-    in_emph: bool = False
     in_code: bool = False
 
     # A 'stack' to store the order of emphs/strongs
-    stack: list[str] = []
+    stack: list[ParagraphToken | EmphToken | BoldToken] = []
 
     # A buffer to temporarily store raw text
     buffer: str = ""
@@ -64,23 +62,21 @@ class Tokeniser:
         return self.peek() == "\0"
 
     # TODO: proper doco
-    # Helper function to add a raw text token to a parent paragraph token
-    def end_raw_text(self, paragraph_token: ParagraphToken):
+    # Helper function to add a raw text token to a parent token
+    def end_raw_text(self, paragraph_token: ParagraphToken | BoldToken | EmphToken):
         if self.buffer == "":
             return
 
         raw_text = RawTextToken()
         raw_text.text = self.buffer
         paragraph_token.children.append(raw_text)
+
         self.buffer = ""
 
     def parse_paragraph(self) -> ParagraphToken:
-        self.in_bold = False
-        self.in_emph = False
         paragraph_token = ParagraphToken()
-        
-        # TODO: make paragraph token use child tokens
-        txt: str = ""
+        self.stack = []
+        self.stack.append(paragraph_token)
 
         while (curr := self.peek()) != "\0":
             # A new line followed by whitespace is a new paragraph
@@ -90,6 +86,9 @@ class Tokeniser:
                 break
 
             if curr == "*":
+                # When encountering a 'special character', save to parent token (top of stack)
+                self.end_raw_text(self.stack[-1])
+
                 # If whitespace exists before and after '*', treat as an unordered list
                 if self.peek_n(1).isspace() and self.peek_n(-1).isspace():
                     # TODO: unordered list function
@@ -100,69 +99,60 @@ class Tokeniser:
 
                 # If character after is '*', we do some form of strong highlighting
                 if self.peek_n(1) == "*":
-                    # TODO: use proper tokens
 
                     # If the character AFTER that is '*', i.e. '***', we do strong emph
                     if self.peek_n(2) == "*":
 
                         # For the terminating '***' we base it on the order of strong/emphs
-                        if self.in_bold and self.in_emph:
-                            self.in_bold = False
-                            self.in_emph = False
-                            txt += self.stack.pop()
-                            txt += self.stack.pop()
+                        # TODO: redo this statement
+                        if isinstance(self.stack[-1], BoldToken | EmphToken) and isinstance(self.stack[-2], BoldToken | EmphToken):
+                            self.stack.pop()
+                            self.stack.pop()
 
                         # Otherwise, the default '***' is strong-emph
                         else:
-                            self.in_bold = True
-                            self.in_emph = True
+                            parent = self.stack[-1]
+                            self.stack.append(BoldToken())
+                            parent.children.append(self.stack[-1])
 
-                            # TODO: this behaviour could be something like an 'add token(s) to stack',
-                            # likewise for the rest of them
-                            txt += "<strong><em>"
-                            self.stack.append("</strong>")
-                            self.stack.append("</em>")
+                            parent = self.stack[-1]
+                            self.stack.append(EmphToken())
+                            parent.children.append(self.stack[-1])
 
                     # Otherwise, just do regular strong
                     else:
-                        if self.in_bold:
-                            self.in_bold = False
-                            txt += self.stack.pop()
+                        if isinstance(self.stack[-1], BoldToken):
+                            self.stack.pop()
                         else:
-                            self.in_bold = True
-                            txt += "<strong>"
-                            self.stack.append("</strong>")
+                            parent = self.stack[-1]
+                            self.stack.append(BoldToken())
+                            parent.children.append(self.stack[-1])
 
                 # Otherwise, it is just emphasised (italic)
                 else:
-                    if self.in_emph:
-                        self.in_emph = False
-                        txt += self.stack.pop()
+                    if isinstance(self.stack[-1], EmphToken):
+                        self.stack.pop()
                     else:
-                        self.in_emph = True
-                        txt += "<em>"
-                        self.stack.append("</em>")
+                        parent = self.stack[-1]
+                        self.stack.append(EmphToken())
+                        parent.children.append(self.stack[-1])
 
                 self.consume_while("*")
-                self.end_raw_text(paragraph_token)
 
             # TODO: lists, links, etc.
             elif curr == "`":
                 if self.in_code:
                     self.in_code = False
-                    txt += "</code>"
+                    # txt += "</code>"
                 else:
                     self.in_code = True
-                    txt += "<code>"
+                    # txt += "<code>"
                 self.consume()
 
             # Otherwise, treat as raw text
             else:
                 self.buffer += self.consume()
 
-        # We 'empty' the stack for this paragraph, e.g. for the event of malformed markdown
-        # while self.stack:
-        #     txt += self.stack.pop()
         return paragraph_token
 
     def parse_header(self) -> HeaderToken:
